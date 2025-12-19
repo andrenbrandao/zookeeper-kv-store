@@ -32,3 +32,7 @@ Execute the binary:
 ```sh
 ./build/kv_server
 ```
+
+## License
+
+[MIT](LICENSE) © André Brandão
