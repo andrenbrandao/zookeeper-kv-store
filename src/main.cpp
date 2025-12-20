@@ -1,5 +1,6 @@
 #include <chrono>
 #include <condition_variable>
+#include <cstring>
 #include <iostream>
 #include <mutex>
 #include <zookeeper/zookeeper.h>
@@ -27,6 +28,20 @@ void watcher(zhandle_t *zh, int type, int zk_state, const char *path,
   }
 }
 
+int create(zhandle_t *zh, const std::string &path, const std::string &value,
+           const struct ACL_vector *acl, int mode) {
+
+  int rc = zoo_create(zh, path.c_str(), value.data(),
+                      static_cast<int>(value.size()), acl, mode, nullptr, 0);
+  if (rc == ZNODEEXISTS) {
+    std::cout << "Node already exists\n";
+  } else if (rc != ZOK) {
+    std::cerr << "zoo_create failed: " << rc << std::endl;
+  }
+
+  return rc;
+}
+
 int main() {
   // Initialize ZooKeeper handle
   // "127.0.0.1:2181" is the default local address
@@ -49,10 +64,19 @@ int main() {
 
   if (state != ConnState::Connected) {
     std::cerr << "Unable to connect to ZooKeeper!" << std::endl;
+    zookeeper_close(zh);
     return 1;
   }
 
-  // TODO: Use Zookeeper here.
+  std::string path = "/zk-demo";
+  std::string value = "hello zookeeper";
+
+  // create
+  int rc = create(zh, path, value, &ZOO_OPEN_ACL_UNSAFE, ZOO_PERSISTENT);
+  if (rc != ZOK) {
+    zookeeper_close(zh);
+    return 1;
+  }
 
   zookeeper_close(zh);
   return 0;
