@@ -60,6 +60,15 @@ int get_data(zhandle_t *zh, const std::string &path, std::string &output) {
   return rc;
 }
 
+int set_data(zhandle_t *zh, const std::string &path, const std::string &value) {
+  int rc = zoo_set(zh, path.c_str(), value.c_str(),
+                   static_cast<int>(value.size()), -1);
+  if (rc != ZOK) {
+    std::cerr << "zoo_set failed: " << rc << std::endl;
+  }
+  return rc;
+}
+
 int main() {
   // Initialize ZooKeeper handle
   // "127.0.0.1:2181" is the default local address
@@ -91,7 +100,7 @@ int main() {
 
   // Create a persistent node.
   int rc = create(zh, path, value, &ZOO_OPEN_ACL_UNSAFE, ZOO_PERSISTENT);
-  if (rc != ZOK) {
+  if (rc != ZOK && rc != ZNODEEXISTS) {
     zookeeper_close(zh);
     return 1;
   }
@@ -105,6 +114,26 @@ int main() {
   }
 
   std::cout << "Read from ZooKeeper: " << output << std::endl;
+
+  // Set new value to node.
+  std::string new_value =
+      "hello from timestamp: " +
+      std::format("{:%Y-%m-%d %H:%M:%OS}", std::chrono::system_clock::now());
+  rc = set_data(zh, path, new_value);
+  if (rc != ZOK) {
+    zookeeper_close(zh);
+    return 1;
+  }
+
+  // Read the value again.
+  std::string saved_value;
+  rc = get_data(zh, path, saved_value);
+  if (rc != ZOK && rc != ZNODEEXISTS) {
+    zookeeper_close(zh);
+    return 1;
+  }
+
+  std::cout << "Read from ZooKeeper: " << saved_value << std::endl;
 
   zookeeper_close(zh);
   return 0;
