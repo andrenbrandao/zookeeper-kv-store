@@ -1,12 +1,10 @@
-#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <iostream>
 #include <mutex>
-#include <thread>
 #include <zookeeper/zookeeper.h>
 
-std::atomic<bool> connected = false;
+bool connected = false;
 std::mutex m;
 std::condition_variable cv;
 
@@ -44,13 +42,13 @@ int main() {
 
   std::unique_lock lock(m);
   if (!cv.wait_for(lock, std::chrono::milliseconds(3000),
-                   [] { return connected.load(); })) {
+                   [] { return connected; })) {
     std::cerr << "Unable to connect to ZooKeeper!" << std::endl;
     zookeeper_close(zh);
     return 1;
   }
 
-  // Use Zookeeper here.
+  // TODO: Use Zookeeper here.
 
   zookeeper_close(zh);
   return 0;
