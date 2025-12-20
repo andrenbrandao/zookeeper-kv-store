@@ -7,21 +7,23 @@
 bool connected = false;
 std::mutex m;
 std::condition_variable cv;
+enum class ConnState { Connecting, Connected, Expired };
+ConnState state = ConnState::Connecting;
 
-void watcher(zhandle_t *zh, int type, int state, const char *path,
+void watcher(zhandle_t *zh, int type, int zk_state, const char *path,
              void *watcherCtx) {
 
   if (type == ZOO_SESSION_EVENT) {
-    if (state == ZOO_CONNECTED_STATE) {
+
+    std::lock_guard<std::mutex> lock(m);
+    if (zk_state == ZOO_CONNECTED_STATE) {
       std::cout << "Connected to ZooKeeper!" << std::endl;
-      {
-        std::lock_guard<std::mutex> lock(m);
-        connected = true;
-      }
-      cv.notify_one();
-    } else if (state == ZOO_EXPIRED_SESSION_STATE) {
+      state = ConnState::Connected;
+    } else if (zk_state == ZOO_EXPIRED_SESSION_STATE) {
       std::cerr << "ZooKeeper session expired!" << std::endl;
+      state = ConnState::Expired;
     }
+    cv.notify_one();
   }
 }
 
@@ -41,10 +43,12 @@ int main() {
             << std::endl;
 
   std::unique_lock lock(m);
-  if (!cv.wait_for(lock, std::chrono::milliseconds(3000),
-                   [] { return connected; })) {
+  cv.wait(lock, [] {
+    return state == ConnState::Connected || state == ConnState::Expired;
+  });
+
+  if (state != ConnState::Connected) {
     std::cerr << "Unable to connect to ZooKeeper!" << std::endl;
-    zookeeper_close(zh);
     return 1;
   }
 
