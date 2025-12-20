@@ -5,7 +5,7 @@ project(
   LANGUAGES CXX)
 
 # Set C++ standard
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Set compile commands for Neovim
@@ -31,5 +31,5 @@ target_compile_definitions(kv_server PRIVATE THREADED)
 target_include_directories(kv_server PRIVATE ${PROJECT_SOURCE_DIR}/src)
 
 find_package(Threads REQUIRED)
-# Link the ZooKeeper library to your executable
+# Link the ZooKeeper library to the executable
 target_link_libraries(kv_server PRIVATE ${ZOOKEEPER_LIB} Threads::Threads)
