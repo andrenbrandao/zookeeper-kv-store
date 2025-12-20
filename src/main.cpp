@@ -42,6 +42,24 @@ int create(zhandle_t *zh, const std::string &path, const std::string &value,
   return rc;
 }
 
+int get_data(zhandle_t *zh, const std::string &path, std::string &output) {
+  char buffer[4096];
+  int buffer_len = sizeof(buffer);
+  int rc = zoo_get(zh, path.c_str(), 0, buffer, &buffer_len, nullptr);
+  if (rc != ZOK) {
+    std::cerr << "zoo_get failed: " << rc << std::endl;
+    return rc;
+  }
+
+  if (buffer_len > sizeof(buffer)) {
+    std::cerr << "zoo_get failed. Data truncated (buffer too small)\n";
+    return ZBADARGUMENTS;
+  }
+
+  output.assign(buffer, buffer_len);
+  return rc;
+}
+
 int main() {
   // Initialize ZooKeeper handle
   // "127.0.0.1:2181" is the default local address
@@ -71,12 +89,22 @@ int main() {
   std::string path = "/zk-demo";
   std::string value = "hello zookeeper";
 
-  // create
+  // Create a persistent node.
   int rc = create(zh, path, value, &ZOO_OPEN_ACL_UNSAFE, ZOO_PERSISTENT);
   if (rc != ZOK) {
     zookeeper_close(zh);
     return 1;
   }
+
+  // Read the value from it.
+  std::string output;
+  rc = get_data(zh, path, output);
+  if (rc != ZOK) {
+    zookeeper_close(zh);
+    return 1;
+  }
+
+  std::cout << "Read from ZooKeeper: " << output << std::endl;
 
   zookeeper_close(zh);
   return 0;
