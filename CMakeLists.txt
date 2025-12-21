@@ -21,6 +21,12 @@ if(NOT ZOOKEEPER_LIB)
       "ZooKeeper library not found! Please install libzookeeper-mt-dev.")
 endif()
 
+find_package(gflags QUIET)
+
+if(NOT gflags_FOUND)
+  message(FATAL_ERROR "gflags library not found! Please install libgflags-dev.")
+endif()
+
 # Define the Executable
 add_executable(kv_server src/main.cpp)
 
@@ -32,4 +38,5 @@ target_include_directories(kv_server PRIVATE ${PROJECT_SOURCE_DIR}/src)
 
 find_package(Threads REQUIRED)
 # Link the ZooKeeper library to the executable
-target_link_libraries(kv_server PRIVATE ${ZOOKEEPER_LIB} Threads::Threads)
+target_link_libraries(kv_server PRIVATE ${ZOOKEEPER_LIB} Threads::Threads
+                                        gflags)

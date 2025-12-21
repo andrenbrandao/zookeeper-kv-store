@@ -1,9 +1,12 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstring>
+#include <gflags/gflags.h>
 #include <iostream>
 #include <mutex>
 #include <zookeeper/zookeeper.h>
+
+DEFINE_string(server_id, "", "Defines the server id.");
 
 bool connected = false;
 std::mutex m;
@@ -15,7 +18,6 @@ void watcher(zhandle_t *zh, int type, int zk_state, const char *path,
              void *watcherCtx) {
 
   if (type == ZOO_SESSION_EVENT) {
-
     std::lock_guard<std::mutex> lock(m);
     if (zk_state == ZOO_CONNECTED_STATE) {
       std::cout << "Connected to ZooKeeper!" << std::endl;
@@ -28,15 +30,55 @@ void watcher(zhandle_t *zh, int type, int zk_state, const char *path,
   }
 }
 
-int create(zhandle_t *zh, const std::string &path, const std::string &value,
-           const struct ACL_vector *acl, int mode) {
+void children_watcher(zhandle_t *zh, int type, int zk_state, const char *path,
+                      void *watcherCtx) {
+  std::cout << "/live-servers changed. New values: ";
 
-  int rc = zoo_create(zh, path.c_str(), value.data(),
-                      static_cast<int>(value.size()), acl, mode, nullptr, 0);
+  struct String_vector strings;
+  // Re-register the watcher because ZooKeeper's watchers are one-shot.
+  int rc = zoo_wget_children(zh, path, children_watcher, nullptr, &strings);
+  if (rc == ZOK) {
+    // Print each child node.
+    for (int i = 0; i < strings.count; ++i) {
+      std::cout << strings.data[i] << " ";
+    }
+  }
+  deallocate_String_vector(&strings);
+  std::cout << std::endl;
+}
+
+int get_children(zhandle_t *zh, const std::string &path, watcher_fn watcher,
+                 std::vector<std::string> &children) {
+  struct String_vector strings;
+  int rc = zoo_wget_children(zh, path.c_str(), watcher, nullptr, &strings);
+  if (rc != ZOK) {
+    std::cerr << "zoo_wget_children failed: " << rc << std::endl;
+    return rc;
+  }
+  for (int i = 0; i < strings.count; ++i) {
+    children.push_back(strings.data[i]);
+  }
+  deallocate_String_vector(&strings);
+  return rc;
+}
+
+int create(zhandle_t *zh, const std::string &path, const std::string &value,
+           const struct ACL_vector *acl, int mode,
+           std::string *created_path = nullptr) {
+
+  char path_buffer[4096];
+  int path_buffer_len = sizeof(path_buffer);
+  int rc =
+      zoo_create(zh, path.c_str(), value.data(), static_cast<int>(value.size()),
+                 acl, mode, path_buffer, path_buffer_len);
   if (rc == ZNODEEXISTS) {
     std::cout << "Node already exists\n";
   } else if (rc != ZOK) {
     std::cerr << "zoo_create failed: " << rc << std::endl;
+  }
+
+  if (rc == ZOK && created_path) {
+    *created_path = path_buffer;
   }
 
   return rc;
@@ -69,7 +111,13 @@ int set_data(zhandle_t *zh, const std::string &path, const std::string &value) {
   return rc;
 }
 
-int main() {
+int main(int argc, char *argv[]) {
+  gflags::ParseCommandLineFlags(&argc, &argv, true);
+  if (FLAGS_server_id == "") {
+    std::cerr << "Must provide a server id with flag --server_id." << std::endl;
+    return 1;
+  }
+
   // Initialize ZooKeeper handle
   // "127.0.0.1:2181" is the default local address
   zhandle_t *zh =
@@ -134,6 +182,45 @@ int main() {
   }
 
   std::cout << "Read from ZooKeeper: " << saved_value << std::endl;
+
+  // Maintain a list of live servers.
+  // Create a persistent node.
+  rc = create(zh, "/live-servers", "", &ZOO_OPEN_ACL_UNSAFE, ZOO_PERSISTENT);
+  if (rc != ZOK && rc != ZNODEEXISTS) {
+    zookeeper_close(zh);
+    return 1;
+  }
+
+  // Create an ephemeral node representing the connection of each server.
+  std::string ephemeral_path = "/live-servers/child-";
+  std::string created_ephemeral_path;
+  std::cout << "Creating ephemeral node: " << ephemeral_path << std::endl;
+  rc = create(zh, ephemeral_path, "", &ZOO_OPEN_ACL_UNSAFE,
+              ZOO_EPHEMERAL_SEQUENTIAL, &created_ephemeral_path);
+  if (rc != ZOK && rc != ZNODEEXISTS) {
+    zookeeper_close(zh);
+    return 1;
+  }
+  std::cout << "ZooKeeper created ephemeral node at: " << created_ephemeral_path
+            << std::endl;
+
+  if (rc != ZNODEEXISTS) {
+    std::cout << "Ephemeral node created!" << std::endl;
+  }
+
+  std::vector<std::string> children;
+  rc = get_children(zh, "/live-servers", children_watcher, children);
+  if (rc != ZOK) {
+    zookeeper_close(zh);
+    return 1;
+  }
+  std::cout << "/live-servers changed. New values: ";
+  for (const std::string &node : children) {
+    std::cout << node << " ";
+  }
+  std::cout << std::endl;
+
+  cv.wait(lock, [] { return state == ConnState::Expired; });
 
   zookeeper_close(zh);
   return 0;
