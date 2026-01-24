@@ -117,6 +117,7 @@ int main(int argc, char *argv[]) {
     std::cerr << "Must provide a server id with flag --server_id." << std::endl;
     return 1;
   }
+  zoo_set_debug_level(ZOO_LOG_LEVEL_DEBUG);
 
   // Initialize ZooKeeper handle
   // "127.0.0.1:2181" is the default local address
